@@ -1,0 +1,255 @@
+library(readr)
+library(semTools)
+library(rpart)
+library(caret)//
+library(ggplot2)
+library(randomForest)
+abalone <- read_csv("D:/OneDrive - Florida State University/MyFSU_OneDrive/FSU Course Work/5635/HW-2/abalone.csv", 
+                    col_names = FALSE)
+attach(abalone)
+
+# a) Null Model 
+
+Null = function(data1,n_split=15,prob_train=0.9)
+{
+  data = splitSample(data1,div = n_split)
+  F = function(D){
+  sample <- sample(c(TRUE, FALSE), nrow(D), 
+                     replace=TRUE, prob=c(prob_train,1-prob_train))
+  d_train = D[sample, ]
+  d_test =  D[!sample, ]
+  y_bar = mean(unlist(d_train[,8]))
+  y_train=d_train[,8]
+  y_test= d_test[,8]
+  y_hat_train = rep(y_bar,length(d_train[,8]))
+  y_hat_test = rep(y_bar,length(d_test[,8]))
+  e_train = (y_train - y_hat_train)^2
+  e_test = (y_test - y_hat_test)^2
+  my.list =list()
+  my.list$train_mse = mean(e_train)
+  my.list$test_mse = mean(e_test)
+  return(my.list)
+  }
+  V=lapply(data, F)
+  train_MSE = array()
+  test_MSE = array()
+  for(i in 1:n_split)
+  {
+    train_MSE = V[[i]]$train_mse
+    test_MSE = V[[i]]$test_mse
+  }
+  my.list = list()
+  my.list$avg_train_MSE = mean(train_MSE)
+  my.list$avg_test_MSE = mean(test_MSE)
+  return(my.list)
+}
+Null(abalone)
+
+###########################################################################
+# b) OLS with penalty = 0.001
+
+
+OLS = function(data1,n_split=15,prob_train=0.9,lambda = 0.001)
+{  
+  data = splitSample(data1,div = n_split)
+  b_hat <- function(y,X,lambda1=lambda)
+  {
+    p=ncol(X)
+    b=solve(t(X)%*%X+diag(lambda1,p))%*%t(X)%*%y
+    rownames(b) = NULL
+    return(b)
+  }
+  F=function(D)
+  {
+    sample <- sample(c(TRUE, FALSE), nrow(D), 
+                     replace=TRUE, prob=c(prob_train,1-prob_train))
+    d_train = D[sample, ]
+    d_test =  D[!sample, ]
+    y_train = d_train[,8]
+    X_train = as.matrix(d_train[,-8])
+    y_test = d_test[,8]
+    X_test = as.matrix(d_test[,-8])
+    beta_hat = b_hat(y_train,X_train)
+    y_hat_train = X_train%*%beta_hat
+    y_hat_test = X_test%*%beta_hat
+    e_train = y_train - y_hat_train
+    e_test = y_test - y_hat_test
+    my.list =list()
+    my.list$train_mse = mean(e_train^2)
+    my.list$test_mse = mean(e_test^2)
+    my.list$train_R.sq = var(y_hat_train)/var(y_train)
+    my.list$test_R.sq = var(y_hat_test)/var(y_test)
+    return(my.list)
+  }
+  V=lapply(data, F)
+  avg_train_MSE = array()
+  avg_test_MSE = array()
+  avg_train_R.sq = array()
+  avg_test_R.sq = array()
+  for(i in 1:n_split)
+  {
+    avg_train_MSE[i] = V[[i]]$train_mse
+    avg_test_MSE[i] = V[[i]]$test_mse
+    avg_train_R.sq[i] = V[[i]]$train_R.sq
+    avg_test_R.sq[i] = V[[i]]$test_R.sq
+    
+  }
+  my.list = list()
+  my.list$avg_train_MSE = mean(avg_train_MSE )
+  my.list$avg_test_MSE = mean(avg_test_MSE)
+  my.list$avg_train_R.sq = mean(avg_train_R.sq)
+  my.list$avg_test_R.sq = mean(avg_test_R.sq)
+  
+  return(my.list)
+}
+OLS(abalone)
+
+
+############################################
+
+# c) Regression tree with depth up-to 7
+
+Reg_Tree = function(data,depth=7,prob_train=0.9,n_split=15)
+{
+DATA = splitSample(data,div = n_split)
+DT <- function(n,data,i){
+  data = data.frame(data[[i]])
+  sample <- sample(c(TRUE, FALSE), nrow(data),
+                   replace=TRUE, prob=c(prob_train,1-prob_train))
+  train = data[sample, ]
+  test = data[!sample, ]
+  fit <- rpart(X8 ~., data = train,  maxdepth = n )
+  y_train = train[,8]
+  y_test = test[,8]
+  y_train_fit = predict(fit)
+  y_test_fit = predict(fit,test) 
+  e_train = (y_train-y_train_fit)^2
+  e_test = (y_test - y_test_fit)^2
+  tr_ms = mean(unlist(e_train))
+  te_ms = mean(unlist(e_test))
+  tr_rsq = var(unlist(y_train_fit))/var(unlist(y_train))
+  te_rsq = var(unlist(y_test_fit))/var(unlist(y_test))
+  output  = list()
+  output$train_mse = tr_ms 
+  output$test_mse= te_ms
+  output$train_R.sq= tr_rsq 
+  output$test_R.sq=te_rsq 
+  return(output)
+}
+RT = function(data,n_depth){
+  Result = sapply(seq(1,n_split),DT,data=DATA,n=n_depth)
+  my.list=list()
+  my.list$depth = n_depth
+  my.list$train_mse = mean(unlist(Result['train_mse',]))
+  my.list$test_mse = mean(unlist(Result['test_mse',]))
+  my.list$train_R.sq = mean(unlist(Result['train_R.sq',]))
+  my.list$test_R.sq = mean(unlist(Result['test_R.sq',]))
+  return(my.list)
+}
+DRT = sapply(seq(1,depth),RT,data = DATA)
+
+output=data.frame(unlist(DRT['depth',]),unlist(DRT['train_mse',]),unlist(DRT['test_mse',])
+                  ,unlist(DRT['train_R.sq',]),unlist(DRT['test_R.sq',]),
+                  Null(data)$avg_train_MSE,Null(data)$avg_test_MSE)
+names(output) = c("Depth","Train_MSE","Test_MSE","Train_R.sq"
+                  ,"Test_R.sq","Null_Train_MSE","Null_Test_MSE")
+
+O = list()
+O$Result = output[,seq(1,5)]
+
+O$R_sq = ggplot(output,aes(x=Depth))+
+  geom_line(aes(y=Train_R.sq,color = "Training"))+
+  geom_line(aes(y=Test_R.sq,color = "Testing"))+
+  xlab('Depth')+ylab('R^2') 
+
+
+O$MSE=ggplot(output,aes(x=Depth))+
+  geom_line(aes(y=Train_MSE,color = "Training"))+
+  geom_line(aes(y=Test_MSE,color = "Testing"))+
+  geom_line(aes(y=Null_Train_MSE,color = "Null_Train"))+
+  geom_line(aes(y=Null_Test_MSE,color = "Null_Test"))+
+  xlab('Depth')+ylab('Mean Square Error') 
+  
+  return(O)
+
+}
+Reg_Tree(abalone)
+##########################################################
+
+# d) Random Forest regression with num_tree = c(10.30.100.300)
+
+
+Random_Forest = function(data,prob_train1 = 0.9,n_split1=15 )
+{
+k = c(3,10,30,100,300)
+RF = function(n_tree,prob_train = prob_train1 ,data,i)
+{
+  data = data.frame(data[[i]])
+  sample <- sample(c(TRUE, FALSE), nrow(data),
+                   replace=TRUE, prob=c(prob_train,1-prob_train))
+  train = data[sample, ]
+  test = data[!sample, ]
+  fit = randomForest(X8 ~., data = train ,  ntree = n_tree )
+  y_train = train[,8]
+  y_test = test[,8]
+  y_train_fit = predict(fit,train)
+  y_test_fit = predict(fit,test) 
+  e_train = (y_train - y_train_fit)^2
+  e_test = (y_test - y_test_fit)^2
+  tr_ms = mean(unlist(e_train))
+  te_ms = mean(unlist(e_test))
+  tr_rsq = var(unlist(y_train_fit))/var(unlist(y_train))
+  te_rsq = var(unlist(y_test_fit))/var(unlist(y_test))
+  output  = list()
+  output$train_mse = tr_ms 
+  output$test_mse= te_ms
+  output$train_R.sq= tr_rsq 
+  output$test_R.sq=te_rsq 
+  return(output)
+}
+RF_out <- function(data,num_split=n_split1,n_tree=n_tree1,prob_train = prob_train1)
+{
+ DATA =  splitSample(data,div = num_split)
+ Result = sapply(seq(1,num_split),RF,
+                 data=DATA,n_tree=n_tree,prob_train = prob_train)
+ my.list=list()
+ my.list$num_Tree = n_tree
+ my.list$train_mse = mean(unlist(Result['train_mse',]))
+ my.list$test_mse = mean(unlist(Result['test_mse',]))
+ my.list$train_R.sq = mean(unlist(Result['train_R.sq',]))
+ my.list$test_R.sq = mean(unlist(Result['test_R.sq',]))
+ return(my.list)
+}
+
+
+DRT = sapply(k,RF_out,data = abalone,
+             num_split=n_split1,prob_train = prob_train1)
+
+output=data.frame(k,unlist(DRT['train_mse',]),unlist(DRT['test_mse',])
+                  ,unlist(DRT['train_R.sq',]),unlist(DRT['test_R.sq',]),
+                  Null(data)$avg_train_MSE,Null(data)$avg_test_MSE)
+names(output) = c("Number.Tree","Train_MSE","Test_MSE","Train_R.sq"
+                  ,"Test_R.sq","Null_Train_MSE","Null_Test_MSE")
+
+O = list()
+O$Final_Result =  output[,seq(1,5)]
+O$R_sq = ggplot(output,aes(x=Number.Tree))+
+  geom_line(aes(y=Train_R.sq,color = "Training"))+
+  geom_line(aes(y=Test_R.sq,color = "Testing"))+
+  xlab('Depth')+ylab('R^2') 
+
+
+O$MSE=ggplot(output,aes(x=Number.Tree))+
+  geom_line(aes(y=Train_MSE,color = "Training"))+
+  geom_line(aes(y=Test_MSE,color = "Testing"))+
+  geom_line(aes(y=Null_Train_MSE,color = "Null_Train"))+
+  geom_line(aes(y=Null_Test_MSE,color = "Null_Test"))+
+  xlab('Depth')+ylab('Mean Square Error') 
+return(O)
+}
+
+Random_Forest(abalone)
+
+
+
+
