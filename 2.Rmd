@@ -1,5 +1,5 @@
 ---
-title: "HW_2"
+title: "Decision Treesa an Random Forest"
 author: "Arnab Aich"
 date: "`r Sys.Date()`"
 output: pdf_document
